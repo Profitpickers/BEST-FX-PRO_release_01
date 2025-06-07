@@ -1,27 +1,100 @@
 //+------------------------------------------------------------------+
 //|                                         CrossStrengthHeatmap.mqh |
-//|                                  Copyright 2025, MetaQuotes Ltd. |
-//|                                             https://www.mql5.com |
+//|         Dashboard visuale con INDEX e iMA delta                  |
+//|         Autore: Vito Iacobellis – CurrencyStrengthTrader         |
 //+------------------------------------------------------------------+
-#property copyright "Copyright 2025, MetaQuotes Ltd."
-#property link      "https://www.mql5.com"
-//+------------------------------------------------------------------+
-//| defines                                                          |
-//+------------------------------------------------------------------+
-// #define MacrosHello   "Hello, world!"
-// #define MacrosYear    2010
-//+------------------------------------------------------------------+
-//| DLL imports                                                      |
-//+------------------------------------------------------------------+
-// #import "user32.dll"
-//   int      SendMessageA(int hWnd,int Msg,int wParam,int lParam);
-// #import "my_expert.dll"
-//   int      ExpertRecalculate(int wParam,int lParam);
-// #import
-//+------------------------------------------------------------------+
-//| EX5 imports                                                      |
-//+------------------------------------------------------------------+
-// #import "stdlib.ex5"
-//   string ErrorDescription(int error_code);
-// #import
-//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, Vito Iacobellis"
+#property link      "https://www.vitoiacobellis.it"
+
+#ifndef __CROSS_STRENGTH_HEATMAP_MQH__
+#define __CROSS_STRENGTH_HEATMAP_MQH__
+
+#include <ChartObjects\ChartObjectsTxtControls.mqh>
+#include "..\\include1\\BestCrossSelector.mqh"
+
+class CCrossStrengthHeatmap
+{
+private:
+   string panelPrefix;
+   int corner;
+   int x_offset;
+   int y_offset;
+   color positiveColor;
+   color negativeColor;
+   color neutralColor;
+   string panelName;
+
+public:
+
+   CCrossStrengthHeatmap()
+   {
+      panelName = "CS_Heatmap";
+   }
+
+   void Init(string prefix = "CSH", int cornerPos = CORNER_LEFT_UPPER, int x = 20, int y = 20)
+   {
+      panelPrefix    = prefix;
+      corner         = cornerPos;
+      x_offset       = x;
+      y_offset       = y;
+      positiveColor  = clrLime;
+      negativeColor  = clrRed;
+      neutralColor   = clrWhite;
+   }
+
+   void DrawCrossPanel(CBestCrossSelector &crossSelector)
+   {
+      int y_spacing = 18;
+      for (int i = 0; i < 5; i++)
+      {
+         CrossSignal cross = crossSelector.GetBestCross(i);
+         if (!cross.isValid) continue;
+
+         string name = panelPrefix + "_Cross" + IntegerToString(i);
+         string text = cross.symbol + " | ΔIDX: " + DoubleToString(cross.indexDelta, 4);
+         color txtColor = (cross.indexDelta > 0) ? positiveColor : negativeColor;
+
+         DrawLabel(name, text, x_offset, y_offset + (i * y_spacing), txtColor);
+      }
+   }
+
+   void DrawIndexPanel(CCurrencyStrengthAnalyzer &strengthAnalyzer, ENUM_TIMEFRAMES tf)
+   {
+      int y_spacing = 16;
+      for (int i = 0; i < 8; i++)
+      {
+         string currency = strengthAnalyzer.GetCurrency(i);
+         double idx = strengthAnalyzer.GetCurrencyStrength(currency, tf);
+
+         string name = panelPrefix + "_IDX_" + currency;
+         string text = currency + ": " + DoubleToString(idx, 4);
+         color txtColor = (idx > 0) ? positiveColor : (idx < 0 ? negativeColor : neutralColor);
+
+         DrawLabel(name, text, x_offset + 140, y_offset + (i * y_spacing), txtColor);
+      }
+   }
+
+   void DrawLabel(string name, string text, int x, int y, color clr)
+   {
+      if (!ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0)) return;
+
+      ObjectSetInteger(0, name, OBJPROP_CORNER, corner);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+   }
+
+   void Clear()
+   {
+      for (int i = 0; i < 5; i++)
+      {
+         ObjectDelete(0, panelName + "_" + IntegerToString(i));
+      }
+   }
+};
+
+#endif // __CROSS_STRENGTH_HEATMAP_MQH__
