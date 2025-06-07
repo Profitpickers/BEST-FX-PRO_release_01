@@ -7,6 +7,9 @@
 #property link      "https://www.vitoiacobellis.it"
 #property version   "1.00"
 
+
+//C:\Users\Administrator\AppData\Roaming\MetaQuotes\Terminal\8762A67661860246215827420BCD27F8\MQL5\Include\BEST FX PRO\include1\CVolumeManager.mqh
+
 // Definizione enum per il menu a tendina
 enum ENUM_LOT_STRATEGY
 {
