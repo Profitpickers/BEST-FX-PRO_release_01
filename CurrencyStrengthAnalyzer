@@ -1,0 +1,85 @@
+//+------------------------------------------------------------------+
+//|                CurrencyStrengthAnalyzer.mqh                      |
+//|           Modulo per calcolo forza valute da RELEASE_5          |
+//|           Autore: Vito Iacobellis – www.vitoiacobellis.it       |
+//+------------------------------------------------------------------+
+
+#ifndef __CURRENCY_STRENGTH_ANALYZER_MQH__
+#define __CURRENCY_STRENGTH_ANALYZER_MQH__
+
+#include <MovingAverages.mqh>
+
+// Enum per metodo MA esteso
+enum ENUM_MA_METHOD_EXT
+{
+   MODE_SMA_EXT = 0,  // Simple
+   MODE_EMA_EXT = 1   // Exponential
+};
+
+// Struttura per contenere i parametri di input
+struct CurrencyStrengthSettings
+{
+   int period;
+   ENUM_MA_METHOD_EXT method;
+};
+
+// Classe per analisi forza valute
+class CCurrencyStrengthAnalyzer
+{
+private:
+   string currencies[8] = {"AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"};
+   string pairs[28] = {
+      "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "CADCHF", "CADJPY", "CHFJPY",
+      "EURAUD", "EURCAD", "EURCHF", "EURGBP", "EURJPY", "EURNZD", "EURUSD", "GBPAUD",
+      "GBPCAD", "GBPCHF", "GBPJPY", "GBPUSD", "NZDCAD", "NZDJPY", "NZDUSD", "USDCAD",
+      "USDCHF", "USDJPY"
+   };
+
+   CurrencyStrengthSettings settings;
+
+public:
+   void Init(CurrencyStrengthSettings cfg)
+   {
+      settings = cfg;
+   }
+
+   double GetCurrencyStrength(string currency, ENUM_TIMEFRAMES tf, int shift = 0)
+   {
+      double strength = 0;
+      int count = 0;
+
+      for (int i = 0; i < ArraySize(pairs); i++)
+      {
+         if (StringFind(pairs[i], currency) != -1)
+         {
+            double close = iClose(pairs[i], tf, shift);
+            int ma_method = (settings.method == MODE_SMA_EXT) ? MODE_SMA : MODE_EMA;
+
+            int ma_handle = iMA(pairs[i], tf, settings.period, 0, ma_method, PRICE_CLOSE);
+            double ma_buffer[];
+            if (CopyBuffer(ma_handle, 0, shift, 1, ma_buffer) > 0)
+            {
+               double ma = ma_buffer[0];
+               if (ma != 0)
+               {
+                  double ratio = (close - ma) / ma;
+                  if (StringFind(pairs[i], currency) == 0)
+                     strength += ratio;
+                  else
+                     strength -= ratio;
+                  count++;
+               }
+            }
+         }
+      }
+
+      return (count > 0) ? strength / count : 0;
+   }
+
+   string GetCurrency(int index)
+   {
+      return (index >= 0 && index < 8) ? currencies[index] : "";
+   }
+};
+
+#endif // __CURRENCY_STRENGTH_ANALYZER_MQH__
