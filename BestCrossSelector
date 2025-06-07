@@ -6,22 +6,102 @@
 #property copyright "Copyright 2025, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 //+------------------------------------------------------------------+
-//| defines                                                          |
+//|                  BestCrossSelector.mqh                           |
+//|    Selezione automatica dei 5 migliori cross FX                  |
+//|    Basato su forza valute calcolata con CurrencyStrengthAnalyzer |
 //+------------------------------------------------------------------+
-// #define MacrosHello   "Hello, world!"
-// #define MacrosYear    2010
-//+------------------------------------------------------------------+
-//| DLL imports                                                      |
-//+------------------------------------------------------------------+
-// #import "user32.dll"
-//   int      SendMessageA(int hWnd,int Msg,int wParam,int lParam);
-// #import "my_expert.dll"
-//   int      ExpertRecalculate(int wParam,int lParam);
-// #import
-//+------------------------------------------------------------------+
-//| EX5 imports                                                      |
-//+------------------------------------------------------------------+
-// #import "stdlib.ex5"
-//   string ErrorDescription(int error_code);
-// #import
-//+------------------------------------------------------------------+
+
+#ifndef __BEST_CROSS_SELECTOR_MQH__
+#define __BEST_CROSS_SELECTOR_MQH__
+
+#include "..\\include1\\CurrencyStrengthAnalyzer.mqh"
+
+
+struct CrossSignal
+{
+   string symbol;
+   double indexDelta;
+   bool isValid;
+};
+
+class CBestCrossSelector
+{
+private:
+   CCurrencyStrengthAnalyzer analyzer;
+   CrossSignal bestCrosses[5];
+   double strengthMap[8];
+
+public:
+   void Init(CurrencyStrengthSettings &settings)
+   {
+      analyzer.Init(settings);
+   }
+
+   void CalculateStrengthMap(ENUM_TIMEFRAMES tf, int shift = 0)
+   {
+      for (int i = 0; i < 8; i++)
+      {
+         string currency = analyzer.GetCurrency(i);
+         strengthMap[i] = analyzer.GetCurrencyStrength(currency, tf, shift);
+      }
+   }
+
+   void SelectTopCrosses()
+   {
+      CrossSignal temp[28];
+      int count = 0;
+
+      for (int i = 0; i < 8; i++)
+      {
+         for (int j = 0; j < 8; j++)
+         {
+            if (i == j) continue;
+
+            string base = analyzer.GetCurrency(i);
+            string quote = analyzer.GetCurrency(j);
+            string symbol = base + quote;
+
+            if (!SymbolSelect(symbol, true)) continue;
+
+            double delta = NormalizeDouble(strengthMap[i] - strengthMap[j], 5);
+
+            if (delta == 0.0) continue;
+
+            temp[count].symbol = symbol;
+            temp[count].indexDelta = delta;
+            temp[count].isValid = true;
+            count++;
+         }
+      }
+
+      // Ordina i delta in valore assoluto decrescente (Top movers)
+      for (int i = 0; i < count - 1; i++)
+      {
+         for (int j = 0; j < count - i - 1; j++)
+         {
+            if (MathAbs(temp[j].indexDelta) < MathAbs(temp[j + 1].indexDelta))
+            {
+               CrossSignal t = temp[j];
+               temp[j] = temp[j + 1];
+               temp[j + 1] = t;
+            }
+         }
+      }
+
+      // Seleziona i migliori 5
+      for (int i = 0; i < 5; i++)
+      {
+         bestCrosses[i] = temp[i];
+      }
+   }
+
+   CrossSignal GetBestCross(int index)
+   {
+      if (index >= 0 && index < 5)
+         return bestCrosses[index];
+      CrossSignal empty = { "", 0.0, false };
+      return empty;
+   }
+};
+
+#endif // __BEST_CROSS_SELECTOR_MQH__
