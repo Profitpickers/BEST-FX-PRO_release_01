@@ -7,40 +7,49 @@
 #ifndef __CURRENCY_STRENGTH_ANALYZER_MQH__
 #define __CURRENCY_STRENGTH_ANALYZER_MQH__
 
-#include <MovingAverages.mqh>
+#include "..\\include1\\MovingAverages.mqh" // Include corretto
 
 // Enum per metodo MA esteso
 enum ENUM_MA_METHOD_EXT
 {
-   MODE_SMA_EXT = 0,  // Simple
-   MODE_EMA_EXT = 1   // Exponential
+   MODE_SMA_EXT = MODE_SMA,  // Simple moving average
+   MODE_EMA_EXT = MODE_EMA   // Exponential moving average
 };
 
-// Struttura per contenere i parametri di input
+// Struttura per i parametri
 struct CurrencyStrengthSettings
 {
    int period;
    ENUM_MA_METHOD_EXT method;
 };
 
-// Classe per analisi forza valute
+// Classe analizzatore forza valute
 class CCurrencyStrengthAnalyzer
 {
 private:
-   string currencies[8] = {"AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"};
-   string pairs[28] = {
-      "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "CADCHF", "CADJPY", "CHFJPY",
-      "EURAUD", "EURCAD", "EURCHF", "EURGBP", "EURJPY", "EURNZD", "EURUSD", "GBPAUD",
-      "GBPCAD", "GBPCHF", "GBPJPY", "GBPUSD", "NZDCAD", "NZDJPY", "NZDUSD", "USDCAD",
-      "USDCHF", "USDJPY"
-   };
-
+   string currencies[8];
+   string pairs[28];
    CurrencyStrengthSettings settings;
 
 public:
-   void Init(CurrencyStrengthSettings cfg)
+   void Init(const CurrencyStrengthSettings &cfg)
    {
       settings = cfg;
+      InitArrays();
+   }
+
+   void InitArrays()
+   {
+      currencies[0] = "AUD"; currencies[1] = "CAD"; currencies[2] = "CHF"; currencies[3] = "EUR";
+      currencies[4] = "GBP"; currencies[5] = "JPY"; currencies[6] = "NZD"; currencies[7] = "USD";
+
+      string p[28] = {
+         "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "CADCHF", "CADJPY", "CHFJPY",
+         "EURAUD", "EURCAD", "EURCHF", "EURGBP", "EURJPY", "EURNZD", "EURUSD", "GBPAUD",
+         "GBPCAD", "GBPCHF", "GBPJPY", "GBPUSD", "NZDCAD", "NZDJPY", "NZDUSD", "USDCAD",
+         "USDCHF", "USDJPY"
+      };
+      ArrayCopy(pairs, p);
    }
 
    double GetCurrencyStrength(string currency, ENUM_TIMEFRAMES tf, int shift = 0)
@@ -53,7 +62,7 @@ public:
          if (StringFind(pairs[i], currency) != -1)
          {
             double close = iClose(pairs[i], tf, shift);
-            int ma_method = (settings.method == MODE_SMA_EXT) ? MODE_SMA : MODE_EMA;
+            ENUM_MA_METHOD ma_method = (settings.method == MODE_SMA_EXT) ? MODE_SMA : MODE_EMA;
 
             int ma_handle = iMA(pairs[i], tf, settings.period, 0, ma_method, PRICE_CLOSE);
             double ma_buffer[];
