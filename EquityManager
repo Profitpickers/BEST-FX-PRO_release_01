@@ -1,0 +1,69 @@
+//+------------------------------------------------------------------+
+//|                                                EquityManager.mqh |
+//|                                  Copyright 2025, MetaQuotes Ltd. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com"
+//+------------------------------------------------------------------+
+//|                       EquityManager.mqh                          |
+//| Modulo di gestione equity globale per chiusura profit/drawdown  |
+//|      Autore: Vito Iacobellis – www.vitoiacobellis.it            |
+//+------------------------------------------------------------------+
+
+#ifndef __EQUITY_MANAGER_MQH__
+#define __EQUITY_MANAGER_MQH__
+
+#include <Trade\Trade.mqh>  // ✅ Serve per usare CTrade
+
+class CEquityManager
+{
+private:
+   double targetEquityTP;
+   double maxEquityDrawdown;
+   double startEquity;
+   bool isTracking;
+
+public:
+   void Init(double tpPercent = 3.0, double ddPercent = 5.0)
+   {
+      startEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      targetEquityTP = startEquity * (1.0 + tpPercent / 100.0);
+      maxEquityDrawdown = startEquity * (1.0 - ddPercent / 100.0);
+      isTracking = true;
+      Print("[EquityManager] Tracking avviato. Start equity: ", startEquity,
+            ", TP: ", targetEquityTP, ", MaxDD: ", maxEquityDrawdown);
+   }
+
+   void CheckEquityLimits()
+   {
+      if (!isTracking) return;
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      if (equity >= targetEquityTP)
+      {
+         CloseAll("[EquityManager] TP raggiunto: chiusura totale.");
+         isTracking = false;
+      }
+      else if (equity <= maxEquityDrawdown)
+      {
+         CloseAll("[EquityManager] Drawdown superato: stop forzato.");
+         isTracking = false;
+      }
+   }
+
+   void CloseAll(string reason)
+   {
+      CTrade trade;
+      for (int i = PositionsTotal() - 1; i >= 0; i--)
+      {
+         if (PositionGetTicket(i))
+         {
+            string symbol = PositionGetString(POSITION_SYMBOL);
+            Print(reason, " Chiusura: ", symbol);
+            trade.PositionClose(symbol);
+         }
+      }
+   }
+};
+
+#endif // __EQUITY_MANAGER_MQH__
