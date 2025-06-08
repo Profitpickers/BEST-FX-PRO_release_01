@@ -14,8 +14,19 @@
 #include "..\\Include\\BEST FX PRO\\include1\\CrossStrengthHeatmap.mqh"
 #include "..\\Include\\BEST FX PRO\\include1\\TradeExecutor.mqh"
 #include "..\\Include\\BEST FX PRO\\include1\\RiskManager.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\PositionManager.mqh"
 
-//--- INPUT PARAMS
+
+
+input group " GESTIONE POSIZIONE "
+input bool EnableTrailing       = true;
+input double TrailingStartPips = 50;
+input double TrailingStepPips  = 20;
+input double GlobalTrailUSD     = 10; // valore in USD equity
+input double MaxSpreadPoints = 20.0;  // Spread massimo accettabile in punti
+
+
+input group " GESTIONE PARAMETRI INPUT "
 input ENUM_TIMEFRAMES TimeframeAnalysis = PERIOD_M15;
 input double IndexDeltaThreshold = 0.005; // Soglia minima per attivare trade (Delta Index)
 input bool InvertIndexLogic = false;
@@ -34,6 +45,8 @@ CBestCrossSelector selector;
 CCrossStrengthHeatmap heatmap;
 CTradeExecutor executor;
 CRiskManager rm;
+CPositionManager posMgr;
+
 
 //--- TIMER
 datetime lastExecutionTime = 0;
@@ -51,6 +64,7 @@ int OnInit()
    selector.Init(csSettings);
    executor.Init((int)LotFallback, (int)SL_Pips, (int)TP_Pips, Slippage);
    rm.Init(RiskPercent, (int)SL_Pips);
+   posMgr.Init(TrailingStartPips, TrailingStepPips, GlobalTrailUSD);
 
    heatmap.Init("CSH", CORNER_LEFT_UPPER, 20, 20);
    EventSetTimer(RefreshSeconds);
@@ -71,31 +85,33 @@ void OnTimer()
 
    selector.CalculateStrengthMap(TimeframeAnalysis);
    selector.SelectTopCrosses();
+   
 
    heatmap.DrawCrossPanel(selector);
    heatmap.DrawIndexPanel(analyzer, TimeframeAnalysis);
 
    for (int i = 0; i < 5; i++)
+{
+   CrossSignal signal = selector.GetBestCross(i);
+   if (!signal.isValid)
+      continue;
+
+   ENUM_ORDER_TYPE type = GetOrderTypeByIndexDelta(signal.indexDelta, InvertIndexLogic);
+   if (executor.HasOpenPositionSameDirection(signal.symbol, type))
+      continue;
+
+   double lots = rm.CalculateLotSize(signal.symbol);
+   if (EnableTrailing) posMgr.Update();
+
+   if (lots <= 0.0)
    {
-      CrossSignal signal = selector.GetBestCross(i);
-      if (!signal.isValid)
-         continue;
-
-      if (executor.HasOpenPosition(signal.symbol))
-         continue;
-
-      double lots = rm.CalculateLotSize(signal.symbol);
-
-      // ⚠️ Protezione se lotto = 0.00 (errore nel volume calcolato)
-      if (lots <= 0.0)
-      {
-         Print("[EA] Skipping ", signal.symbol, " per lotto invalido (", DoubleToString(lots, 2), ")");
-         continue;
-      }
-
-      executor.Init(lots, SL_Pips, TP_Pips, Slippage);  // usa double, non castare
-      executor.ExecuteOrders(selector, InvertIndexLogic, IndexDeltaThreshold);
+      Print("[EA] Skipping ", signal.symbol, " per lotto invalido (", DoubleToString(lots, 2), ")");
+      continue;
    }
+
+   executor.Init(lots, SL_Pips, TP_Pips, Slippage);
+   executor.ExecuteOrders(selector, InvertIndexLogic, IndexDeltaThreshold, MaxSpreadPoints);
+}
 }
 
 void OnTick()
