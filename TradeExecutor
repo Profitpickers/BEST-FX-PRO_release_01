@@ -27,40 +27,44 @@ private:
    double tp_points;
 
 public:
-   void Init(double lotSize = 0.1, int sl = 100, int tp = 200, int slip = 5)
-   {
-      lots = lotSize;
-      sl_points = sl;
-      tp_points = tp;
-      slippage = slip;
-   }
+   void Init(double lotSize, double sl, double tp, int slip)
+{
+   lots = lotSize;
+   sl_points = sl;
+   tp_points = tp;
+   slippage = slip;
+}
 
-   void ExecuteOrders(CBestCrossSelector &crossSelector)
+   void ExecuteOrders(CBestCrossSelector &crossSelector, bool invertLogic, double threshold)
 {
    for (int i = 0; i < 5; i++)
    {
       CrossSignal signal = crossSelector.GetBestCross(i);
-      if (!signal.isValid) continue;
+      if (!signal.isValid || MathAbs(signal.indexDelta) < threshold)
+      {
+         Print("[TradeExecutor] Skipped ", signal.symbol, " - Weak ΔIndex: ", DoubleToString(signal.indexDelta, 5));
+         continue;
+      }
 
       if (HasOpenPosition(signal.symbol))
          continue;
 
-      ENUM_ORDER_TYPE type = (signal.indexDelta > 0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-      double price = (type == ORDER_TYPE_BUY)
-                     ? SymbolInfoDouble(signal.symbol, SYMBOL_ASK)
-                     : SymbolInfoDouble(signal.symbol, SYMBOL_BID);
+      ENUM_ORDER_TYPE type = ((signal.indexDelta > 0) != invertLogic) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
 
+      double price = (type == ORDER_TYPE_BUY) ? SymbolInfoDouble(signal.symbol, SYMBOL_ASK)
+                                              : SymbolInfoDouble(signal.symbol, SYMBOL_BID);
       double sl = (type == ORDER_TYPE_BUY) ? price - sl_points * _Point : price + sl_points * _Point;
       double tp = (type == ORDER_TYPE_BUY) ? price + tp_points * _Point : price - tp_points * _Point;
 
       bool result = trade.PositionOpen(signal.symbol, type, lots, price, sl, tp, "AUTO-CS");
 
       if (result)
-         Print("[TradeExecutor] Opened ", EnumToString(type), " on ", signal.symbol);
+         Print("[TradeExecutor] ✅ OPEN ", EnumToString(type), " on ", signal.symbol, " | Δ=", DoubleToString(signal.indexDelta, 5));
       else
-         Print("[TradeExecutor] Failed to open position on ", signal.symbol);
+         Print("[TradeExecutor] ❌ FAILED ", signal.symbol, " | Δ=", DoubleToString(signal.indexDelta, 5));
    }
 }
+
 
    bool HasOpenPosition(string symbol)
 {
