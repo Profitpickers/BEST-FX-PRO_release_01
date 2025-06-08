@@ -1,57 +1,104 @@
 //+------------------------------------------------------------------+
-//|                                                  RiskManager.mqh |
-//|                                  Copyright 2025, MetaQuotes Ltd. |
-//|                                             https://www.mql5.com |
+//|                       BEST FX PRO_release_01.mq5                 |
+//|         EA modulare - Currency Strength Trader                   |
+//|         Autore: Vito Iacobellis – www.vitoiacobellis.it         |
 //+------------------------------------------------------------------+
-#property copyright "Copyright 2025, MetaQuotes Ltd."
-#property link      "https://www.mql5.com"
-//+------------------------------------------------------------------+
-//|                     RiskManager.mqh                              |
-//|     Modulo gestione rischio: lotto dinamico, SL/TP percentuale   |
-//|           Autore: Vito Iacobellis – www.vitoiacobellis.it       |
-//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, ProfitPickers - vitoiacobellis.it"
+#property link      "https://www.vitoiacobellis.it"
+#property version   "1.07"
+#property strict
 
-#ifndef __RISK_MANAGER_MQH__
-#define __RISK_MANAGER_MQH__
+#include <Trade\Trade.mqh>
+#include "..\\Include\\BEST FX PRO\\include1\\CurrencyStrengthAnalyzer.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\BestCrossSelector.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CrossStrengthHeatmap.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\TradeExecutor.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\RiskManager.mqh"
 
-class CRiskManager
+//--- INPUT PARAMS
+input ENUM_TIMEFRAMES TimeframeAnalysis = PERIOD_M15;
+input double IndexDeltaThreshold = 0.005; // Soglia minima per attivare trade (Delta Index)
+input bool InvertIndexLogic = false;
+input double RiskPercent  = 1.0;
+input double SL_Pips      = 100.0;
+input double TP_Pips      = 200.0;
+input double LotFallback  = 0.1;
+input int    Slippage     = 5;
+input int    RefreshSeconds = 60;
+
+
+//--- GLOBAL OBJECTS
+CurrencyStrengthSettings csSettings;
+CCurrencyStrengthAnalyzer analyzer;
+CBestCrossSelector selector;
+CCrossStrengthHeatmap heatmap;
+CTradeExecutor executor;
+CRiskManager rm;
+
+//--- TIMER
+datetime lastExecutionTime = 0;
+
+ENUM_ORDER_TYPE GetOrderTypeByIndexDelta(double indexDelta, bool invert)
 {
-private:
-   double accountRiskPercent;
-   double stopLossPips;
+   return ((indexDelta > 0) != invert) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+}
 
-public:
-   void Init(double riskPercent = 1.0, double slPips = 100.0)
+int OnInit()
+{
+   csSettings.period = 14;
+   csSettings.method = MODE_SMA_EXT;
+   analyzer.Init(csSettings);
+   selector.Init(csSettings);
+   executor.Init((int)LotFallback, (int)SL_Pips, (int)TP_Pips, Slippage);
+   rm.Init(RiskPercent, (int)SL_Pips);
+
+   heatmap.Init("CSH", CORNER_LEFT_UPPER, 20, 20);
+   EventSetTimer(RefreshSeconds);
+   Print("[EA INIT] CurrencyStrengthTrader pronto.");
+   return INIT_SUCCEEDED;
+}
+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+   heatmap.Clear();
+   Print("[EA STOP] CurrencyStrengthTrader disattivato.");
+}
+
+void OnTimer()
+{
+   Print("[EA] Analisi forza valute e selezione cross...");
+
+   selector.CalculateStrengthMap(TimeframeAnalysis);
+   selector.SelectTopCrosses();
+
+   heatmap.DrawCrossPanel(selector);
+   heatmap.DrawIndexPanel(analyzer, TimeframeAnalysis);
+
+   for (int i = 0; i < 5; i++)
    {
-      accountRiskPercent = riskPercent;
-      stopLossPips = slPips;
+      CrossSignal signal = selector.GetBestCross(i);
+      if (!signal.isValid)
+         continue;
+
+      if (executor.HasOpenPosition(signal.symbol))
+         continue;
+
+      double lots = rm.CalculateLotSize(signal.symbol);
+
+      // ⚠️ Protezione se lotto = 0.00 (errore nel volume calcolato)
+      if (lots <= 0.0)
+      {
+         Print("[EA] Skipping ", signal.symbol, " per lotto invalido (", DoubleToString(lots, 2), ")");
+         continue;
+      }
+
+      executor.Init(lots, SL_Pips, TP_Pips, Slippage);  // usa double, non castare
+      executor.ExecuteOrders(selector, InvertIndexLogic, IndexDeltaThreshold);
    }
+}
 
-   double CalculateLotSize(string symbol)
-   {
-      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
-      double tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
-      double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
-
-      if (tickValue <= 0 || tickSize <= 0 || contractSize <= 0)
-         return 0.01;
-
-      double riskAmount = balance * accountRiskPercent / 100.0;
-      double slInPoints = stopLossPips / point;
-      double lotSize = riskAmount / (slInPoints * tickValue / tickSize);
-
-      // Ritaglia tra min e max lotto
-      double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-      double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
-      double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
-
-      lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
-      lotSize = MathFloor(lotSize / lotStep) * lotStep;
-
-      return NormalizeDouble(lotSize, 2);
-   }
-};
-
-#endif // __RISK_MANAGER_MQH__
+void OnTick()
+{
+   // Vuoto - solo analisi ciclica via OnTimer
+}
