@@ -1,0 +1,151 @@
+//+------------------------------------------------------------------+
+//|                                        CCrossStrengthHeatmap.mqh |
+//|         Dashboard visuale con INDEX e iMA delta                  |
+//|         Autore: Vito Iacobellis – CurrencyStrengthTrader         |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, Vito Iacobellis"
+#property link      "https://www.vitoiacobellis.it"
+
+#ifndef __CROSS_STRENGTH_HEATMAP_MQH__
+#define __CROSS_STRENGTH_HEATMAP_MQH__
+
+#include <ChartObjects\ChartObjectsTxtControls.mqh>
+#include "..\\include1\\BestCrossSelector.mqh"
+#include "..\\include1\\CurrencyStrengthAnalyzer.mqh"
+
+class CCrossStrengthHeatmap
+{
+private:
+   string panelPrefix;
+   int corner;
+   int x_offset;
+   int y_offset;
+   color positiveColor;
+   color negativeColor;
+   color neutralColor;
+
+public:
+
+   void Init(string prefix = "CSH", int cornerPos = CORNER_LEFT_UPPER, int x = 20, int y = 20)
+   {
+      panelPrefix    = prefix;
+      corner         = cornerPos;
+      x_offset       = x;
+      y_offset       = y;
+      positiveColor  = clrLime;
+      negativeColor  = clrRed;
+      neutralColor   = clrWhite;
+   }
+
+   void DrawCrossPanel(CBestCrossSelector &crossSelector)
+   {
+      int y_spacing = 18;
+      int y = y_offset;
+      int rank_BUY = 1;
+      int buyLines = 0;
+
+      DrawLabel(panelPrefix + "_BUY_HEADER", "🔼 TOP BUY", x_offset, y, clrLime);
+      y += y_spacing;
+
+      for (int i = 0; i < 10; i++)
+      {
+         CrossSignal cross = crossSelector.GetBestCross(i);
+         if (!cross.isValid || cross.indexDelta <= 0) continue;
+
+         string name = panelPrefix + "_CrossBUY_" + IntegerToString(rank_BUY);
+         string text = "#" + IntegerToString(rank_BUY++) + " " + cross.symbol + " | ΔIDX: " + DoubleToString(cross.indexDelta, 4);
+         DrawLabel(name, text, x_offset, y, clrLime);
+         y += y_spacing;
+         buyLines++;
+      }
+
+      y = y_offset + (buyLines + 2) * y_spacing;
+
+      DrawLabel(panelPrefix + "_SELL_HEADER", "🔽 TOP SELL", x_offset, y, clrRed);
+      y += y_spacing;
+
+      int rank_SELL = 1;
+      for (int i = 0; i < 10; i++)
+      {
+         CrossSignal cross = crossSelector.GetBestCross(i);
+         if (!cross.isValid || cross.indexDelta >= 0) continue;
+
+         string name = panelPrefix + "_CrossSELL_" + IntegerToString(rank_SELL);
+         string text = "#" + IntegerToString(rank_SELL++) + " " + cross.symbol + " | ΔIDX: " + DoubleToString(cross.indexDelta, 4);
+         DrawLabel(name, text, x_offset, y, clrRed);
+         y += y_spacing;
+      }
+   }
+
+   void DrawIndexPanel(CCurrencyStrengthAnalyzer &strengthAnalyzer, ENUM_TIMEFRAMES tf)
+   {
+      int y_spacing = 16;
+      int x_base = x_offset + 220;
+
+      struct CurrencyIndex { string name; double value; } arr[8];
+
+      DrawLabel(panelPrefix + "_IDX_TITLE", "🏁 RANK VALUTE", x_base, y_offset - 16, clrWhiteSmoke);
+
+      for (int i = 0; i < 8; i++)
+      {
+         string currency = strengthAnalyzer.GetCurrency(i);
+         double idx = strengthAnalyzer.GetCurrencyStrength(currency, tf);
+         arr[i].name = currency;
+         arr[i].value = idx;
+      }
+
+      for (int i = 0; i < 7; i++)
+      {
+         for (int j = i + 1; j < 8; j++)
+         {
+            if (arr[j].value > arr[i].value)
+            {
+               CurrencyIndex tmp = arr[i];
+               arr[i] = arr[j];
+               arr[j] = tmp;
+            }
+         }
+      }
+
+      for (int i = 0; i < 8; i++)
+      {
+         string name = panelPrefix + "_IDX_" + arr[i].name;
+         string text = "#" + IntegerToString(i + 1) + " " + arr[i].name + ": " + DoubleToString(arr[i].value, 4);
+         color txtColor = (arr[i].value > 0) ? positiveColor : (arr[i].value < 0 ? negativeColor : neutralColor);
+         DrawLabel(name, text, x_base, y_offset + (i * y_spacing), txtColor);
+      }
+   }
+
+   void DrawLabel(string name, string text, int x, int y, color clr)
+   {
+      ObjectDelete(0, name);
+      if (!ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0)) return;
+
+      ObjectSetInteger(0, name, OBJPROP_CORNER, corner);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+   }
+
+   void Clear()
+   {
+      for (int i = 1; i <= 10; i++)
+      {
+         ObjectDelete(0, panelPrefix + "_CrossBUY_" + IntegerToString(i));
+         ObjectDelete(0, panelPrefix + "_CrossSELL_" + IntegerToString(i));
+      }
+
+      ObjectDelete(0, panelPrefix + "_BUY_HEADER");
+      ObjectDelete(0, panelPrefix + "_SELL_HEADER");
+      ObjectDelete(0, panelPrefix + "_IDX_TITLE");
+
+      for (int i = 0; i < 8; i++)
+         ObjectDelete(0, panelPrefix + "_IDX_" + IntegerToString(i));
+   }
+};
+
+#endif // __CROSS_STRENGTH_HEATMAP_MQH__
