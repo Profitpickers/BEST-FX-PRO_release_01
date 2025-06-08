@@ -11,7 +11,7 @@
 #include <Trade\Trade.mqh>
 #include "..\\Include\\BEST FX PRO\\include1\\CurrencyStrengthAnalyzer.mqh"
 #include "..\\Include\\BEST FX PRO\\include1\\BestCrossSelector.mqh"
-#include "..\\Include\\BEST FX PRO\\include1\\CrossStrengthHeatmap.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CCrossStrengthHeatmap.mqh"
 #include "..\\Include\\BEST FX PRO\\include1\\TradeExecutor.mqh"
 #include "..\\Include\\BEST FX PRO\\include1\\RiskManager.mqh"
 #include "..\\Include\\BEST FX PRO\\include1\\PositionManager.mqh"
