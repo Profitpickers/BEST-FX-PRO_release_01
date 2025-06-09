@@ -1,0 +1,97 @@
+//+------------------------------------------------------------------+
+//|                                              PositionManager.mqh |
+//|                                  Copyright 2025, MetaQuotes Ltd. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com"
+//+------------------------------------------------------------------+
+//|                         PositionManager.mqh                      |
+//|         Trailing SU posizioni aperte ed Equity globale           |
+//+------------------------------------------------------------------+
+#ifndef __POSITION_MANAGER_MQH__
+#define __POSITION_MANAGER_MQH__
+
+#include <Trade\Trade.mqh>
+
+class CPositionManager
+{
+private:
+   double trailingStart; 
+   double trailingStep;  
+   double equityHigh;    
+   double globalTrailDiff;
+
+public:
+   void Init(double startPoints, double stepPoints, double globalTrail)
+   {
+      trailingStart = startPoints;
+      trailingStep  = stepPoints;
+      globalTrailDiff = globalTrail;
+      equityHigh = AccountInfoDouble(ACCOUNT_EQUITY);
+   }
+
+   void Update()
+   {
+      UpdateEquityHigh();
+      ManageGlobalTrailing();
+
+      ulong ticket = PositionGetTicket(0);
+      for(int i=PositionsTotal()-1; i>=0; i--)
+      {
+         if(!PositionGetTicket(i)) continue;
+         ticket = PositionGetInteger(POSITION_TICKET);
+         ManageTrailingSingle(ticket);
+      }
+   }
+
+private:
+   void UpdateEquityHigh()
+   {
+      double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(eq > equityHigh) equityHigh = eq;
+   }
+
+   void ManageGlobalTrailing()
+   {
+      double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+      double diff = equityHigh - eq;
+      if(diff >= globalTrailDiff)
+      {
+         Print("[PositionManager] Global trailing triggered. Equity high=",equityHigh," current=",eq);
+         CTrade t;
+         for(int i=PositionsTotal()-1; i>=0; i--)
+         {
+            PositionGetTicket(i);
+            t.PositionClose(PositionGetString(POSITION_SYMBOL));
+         }
+         equityHigh = eq; // resettare
+      }
+   }
+
+   void ManageTrailingSingle(ulong ticket)
+   {
+      if(!PositionSelectByTicket(ticket)) return;
+
+      long type = PositionGetInteger(POSITION_TYPE);
+      double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl     = PositionGetDouble(POSITION_SL);
+      double profit = PositionGetDouble(POSITION_PROFIT);
+      double current = (type==POSITION_TYPE_BUY) ?
+         SymbolInfoDouble(PositionGetString(POSITION_SYMBOL), SYMBOL_BID) :
+         SymbolInfoDouble(PositionGetString(POSITION_SYMBOL), SYMBOL_ASK);
+
+      double diff = (type==POSITION_TYPE_BUY) ? (current - entry) : (entry - current);
+      if(diff * _Point < trailingStart*_Point || diff <= 0) return;
+
+      double newSL = (type==POSITION_TYPE_BUY) ? (current - trailingStep*_Point) : (current + trailingStep*_Point);
+      if((type==POSITION_TYPE_BUY && newSL > sl) || (type==POSITION_TYPE_SELL && newSL < sl))
+      {
+         CTrade t;
+         bool ok = t.PositionModify(PositionGetString(POSITION_SYMBOL), newSL, PositionGetDouble(POSITION_TP));
+         if(ok) PrintFormat("[PositionManager] Trailing moved SL for %s to %.5f", PositionGetString(POSITION_SYMBOL), newSL);
+      }
+   }
+};
+
+#endif //__POSITION_MANAGER_MQH__
