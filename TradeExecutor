@@ -6,16 +6,15 @@
 #property copyright "Copyright 2025, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 //+------------------------------------------------------------------+
-//|                   TradeExecutor.mqh                              |
-//|  Modulo per esecuzione automatica ordini sui 5 cross migliori    |
-//|           Autore: Vito Iacobellis – www.vitoiacobellis.it       |
+//| Modulo per esecuzione automatica ordini sui 5 cross migliori     |
+//| Autore: Vito Iacobellis – www.vitoiacobellis.it                 |
 //+------------------------------------------------------------------+
-
 #ifndef __TRADE_EXECUTOR_MQH__
 #define __TRADE_EXECUTOR_MQH__
 
 #include <Trade\Trade.mqh>
 #include "BestCrossSelector.mqh"
+#include "CheckSpreadAcceptable.mqh"
 
 class CTradeExecutor
 {
@@ -27,51 +26,89 @@ private:
    double tp_points;
 
 public:
-   void Init(double lotSize, double sl, double tp, int slip)
-{
-   lots = lotSize;
-   sl_points = sl;
-   tp_points = tp;
-   slippage = slip;
-}
 
-   void ExecuteOrders(CBestCrossSelector &crossSelector, bool invertLogic, double threshold)
-{
-   for (int i = 0; i < 5; i++)
+   //--- Inizializzazione parametri
+   void Init(double lotSize, double sl, double tp, int slip)
    {
-      CrossSignal signal = crossSelector.GetBestCross(i);
-      if (!signal.isValid || MathAbs(signal.indexDelta) < threshold)
+      lots      = lotSize;
+      sl_points = sl;
+      tp_points = tp;
+      slippage  = slip;
+   }
+
+   //--- Esecuzione ordini sui 5 migliori cross
+   void ExecuteOrders(CBestCrossSelector &crossSelector,
+                      bool invertLogic,
+                      double threshold,
+                      double maxSpreadPoints)
+   {
+      for (int i = 0; i < 5; i++)
       {
-         Print("[TradeExecutor] Skipped ", signal.symbol, " - Weak ΔIndex: ", DoubleToString(signal.indexDelta, 5));
-         continue;
+         CrossSignal signal = crossSelector.GetBestCross(i);
+
+         if (!signal.isValid || MathAbs(signal.indexDelta) < threshold)
+         {
+            Print("[TradeExecutor] Skipped ", signal.symbol, " - Weak ΔIndex: ", DoubleToString(signal.indexDelta, 5));
+            continue;
+         }
+
+         //--- Check spread prima di tutto
+         if (!CheckSpreadAcceptable(signal.symbol, maxSpreadPoints))
+         {
+            Print("[TradeExecutor] ❌ Skipped ", signal.symbol, " - Spread eccessivo");
+            continue;
+         }
+
+         ENUM_ORDER_TYPE type = ((signal.indexDelta > 0) != invertLogic) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+
+         if (HasOpenPositionSameDirection(signal.symbol, type))
+            continue;
+
+         double price = (type == ORDER_TYPE_BUY)
+                          ? SymbolInfoDouble(signal.symbol, SYMBOL_ASK)
+                          : SymbolInfoDouble(signal.symbol, SYMBOL_BID);
+
+         double sl = (type == ORDER_TYPE_BUY)
+                          ? price - sl_points * _Point
+                          : price + sl_points * _Point;
+
+         double tp = (type == ORDER_TYPE_BUY)
+                          ? price + tp_points * _Point
+                          : price - tp_points * _Point;
+
+         bool result = trade.PositionOpen(signal.symbol, type, lots, price, sl, tp, "AUTO-CS");
+
+         if (result)
+            Print("[TradeExecutor] ✅ OPEN ", EnumToString(type), " on ", signal.symbol, " | Δ=", DoubleToString(signal.indexDelta, 5));
+         else
+            Print("[TradeExecutor] ❌ FAILED ", signal.symbol, " | Δ=", DoubleToString(signal.indexDelta, 5));
+      }
+   }
+
+   //--- Verifica presenza posizione aperta nella stessa direzione
+   bool HasOpenPositionSameDirection(string symbol, ENUM_ORDER_TYPE newType)
+   {
+      if (!PositionSelect(symbol))
+         return false;
+
+      long existingType = PositionGetInteger(POSITION_TYPE);
+
+      if ((ENUM_ORDER_TYPE)existingType == newType)
+      {
+         PrintFormat("[TradeExecutor] ➖ Skip %s: già aperta in direzione (%s)", symbol, EnumToString((ENUM_ORDER_TYPE)existingType));
+         return true;
       }
 
-      if (HasOpenPosition(signal.symbol))
-         continue;
+      //--- Chiude posizione opposta
+      double volume = PositionGetDouble(POSITION_VOLUME);
+      trade.PositionClose(symbol);
 
-      ENUM_ORDER_TYPE type = ((signal.indexDelta > 0) != invertLogic) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      PrintFormat("[TradeExecutor] 🔁 Closed %s, apertura in corso di %s",
+                  EnumToString((ENUM_ORDER_TYPE)existingType),
+                  EnumToString(newType));
 
-      double price = (type == ORDER_TYPE_BUY) ? SymbolInfoDouble(signal.symbol, SYMBOL_ASK)
-                                              : SymbolInfoDouble(signal.symbol, SYMBOL_BID);
-      double sl = (type == ORDER_TYPE_BUY) ? price - sl_points * _Point : price + sl_points * _Point;
-      double tp = (type == ORDER_TYPE_BUY) ? price + tp_points * _Point : price - tp_points * _Point;
-
-      bool result = trade.PositionOpen(signal.symbol, type, lots, price, sl, tp, "AUTO-CS");
-
-      if (result)
-         Print("[TradeExecutor] ✅ OPEN ", EnumToString(type), " on ", signal.symbol, " | Δ=", DoubleToString(signal.indexDelta, 5));
-      else
-         Print("[TradeExecutor] ❌ FAILED ", signal.symbol, " | Δ=", DoubleToString(signal.indexDelta, 5));
+      return false; // Ora si può aprire
    }
-}
-
-
-   bool HasOpenPosition(string symbol)
-{
-   if (PositionSelect(symbol))
-      return true;
-   return false;
-}
 };
 
 #endif // __TRADE_EXECUTOR_MQH__
