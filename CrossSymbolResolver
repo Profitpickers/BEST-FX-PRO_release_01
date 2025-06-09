@@ -1,0 +1,43 @@
+//+------------------------------------------------------------------+
+//|                                          CrossSymbolResolver.mqh |
+//|                                  Copyright 2025, MetaQuotes Ltd. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com"
+//+------------------------------------------------------------------+
+//|                                           CrossSymbolResolver.mqh|
+//|                Modulo per gestione intelligente CROSS A/B        |
+//|                Autore: Vito Iacobellis – ProfitPickers           |
+//+------------------------------------------------------------------+
+#ifndef __CROSS_SYMBOL_RESOLVER__
+#define __CROSS_SYMBOL_RESOLVER__
+
+#include <Trade\SymbolInfo.mqh>
+
+// 📌 Funzione per risolvere un cross valutario base/quote, gestendo inversione
+bool ResolveSymbolAB(string base, string quote, string &resolvedSymbol, bool &inverted)
+{
+   string direct  = base + quote;
+   string reverse = quote + base;
+
+   // 🔍 Verifica se esiste la forma diretta
+   if (SymbolSelect(direct, true))
+   {
+      resolvedSymbol = direct;
+      inverted = false;
+      return true;
+   }
+
+   // 🔁 Altrimenti prova la forma inversa
+   if (SymbolSelect(reverse, true))
+   {
+      resolvedSymbol = reverse;
+      inverted = true;
+      return true;
+   }
+
+   return false; // ❌ Nessuna delle due esiste
+}
+
+#endif // __CROSS_SYMBOL_RESOLVER__
