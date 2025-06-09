@@ -1,0 +1,32 @@
+//+------------------------------------------------------------------+
+//|                                        CheckSpreadAcceptable.mqh |
+//|               Modulo utilità per verifica spread                |
+//|       Autore: Vito Iacobellis – www.vitoiacobellis.it           |
+//+------------------------------------------------------------------+
+#ifndef __CHECK_SPREAD_ACCEPTABLE_MQH__
+#define __CHECK_SPREAD_ACCEPTABLE_MQH__
+
+//--- Verifica se lo spread è entro la soglia accettabile (in punti)
+bool CheckSpreadAcceptable(string symbol, double maxSpreadPoints)
+{
+   double ask = 0, bid = 0;
+
+   if (!SymbolInfoDouble(symbol, SYMBOL_ASK, ask) ||
+       !SymbolInfoDouble(symbol, SYMBOL_BID, bid))
+   {
+      PrintFormat("[SPREAD CHECK] ⚠️ Errore nel recupero bid/ask per %s", symbol);
+      return false;
+   }
+
+   double spread = (ask - bid) / _Point;
+
+   if (spread > maxSpreadPoints)
+   {
+      PrintFormat("[SPREAD CHECK] ❌ Spread %s troppo alto: %.1f > %.1f", symbol, spread, maxSpreadPoints);
+      return false;
+   }
+
+   return true;
+}
+
+#endif // __CHECK_SPREAD_ACCEPTABLE_MQH__
