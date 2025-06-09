@@ -27,7 +27,7 @@ class CCurrencyStrengthAnalyzer
 {
 private:
    string currencies[8];
-   string pairs[28];
+   string pairs[26];
    CurrencyStrengthSettings settings;
 
 public:
@@ -45,7 +45,7 @@ public:
       currencies[0] = "AUD"; currencies[1] = "CAD"; currencies[2] = "CHF"; currencies[3] = "EUR";
       currencies[4] = "GBP"; currencies[5] = "JPY"; currencies[6] = "NZD"; currencies[7] = "USD";
 
-      string p[28] = {
+      string p[26] = {
    "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "CADCHF", "CADJPY", "CHFJPY",
    "EURAUD", "EURCAD", "EURCHF", "EURGBP", "EURJPY", "EURNZD", "EURUSD", "GBPAUD",
    "GBPCAD", "GBPCHF", "GBPJPY", "GBPUSD", "NZDCAD", "NZDJPY", "NZDUSD", "USDCAD",
