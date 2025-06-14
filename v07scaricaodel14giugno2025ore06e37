@@ -1,0 +1,213 @@
+//+------------------------------------------------------------------+
+//|                       BEST FX PRO_release_01.mq5                 |
+//|         EA modulare - Currency Strength Trader                   |
+//|         Autore: Vito Iacobellis – www.vitoiacobellis.it         |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, ProfitPickers - vitoiacobellis.it"
+#property link      "https://www.vitoiacobellis.it"
+#property version   "1.07"
+#property strict
+
+#include <Trade\Trade.mqh>
+#include "..\\Include\\BEST FX PRO\\include1\\CurrencyStrengthAnalyzer.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\BestCrossSelector.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CCrossStrengthHeatmap.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CPullbackFilter.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\TradeExecutor.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\RiskManager.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\PositionManager.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CVolumeManager.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CTrailingManager.mqh"
+#include "..\\Include\\BEST FX PRO\\include1\\CDashboardVisualizer.mqh"
+#include "..\\Include\\BEST FX PRO\\include2\\CSafeEMACalculator.mqh"
+
+input group " BEST FX PRO Release-01.07-13/06/2025-20.50 -- -- --//12/06/2025-18.16 // PRECEDENTE ULTIMA 01.07 del 11/06/2025 ore 20.18 "
+input group " GESTIONE POSIZIONE "
+input bool EnableTrailing       = true;
+input double TrailingStartPips = 50;
+input double TrailingStepPips  = 20;
+input double GlobalTrailUSD     = 10; // valore in USD equity
+input double MaxSpreadPoints = 20.0;  // Spread massimo accettabile in punti
+
+input double TrailPercent = 0.3; // 30% del profitto massimo
+input double MinPullbackPercent = 0.005; // 0.5%
+input int EMAPeriodTrend = 50;
+
+
+input ENUM_LOT_STRATEGY LotStrategy = FIXED_LOT;
+input double BaseLot = 0.01;
+input double MaxLot = 0.1;
+input double IncrementIndex = 0.05;
+input double MartingaleMultiplier = 2.0;
+input double SumIncrement = 0.01;
+input bool UseVolumeReset = true;
+input double ResetTriggerPercent = 10.0;
+
+
+input group " GESTIONE PARAMETRI INPUT "
+input int TopBuyCrosses  = 3;
+input int TopSellCrosses = 3;
+input ENUM_TIMEFRAMES TimeframeAnalysis = PERIOD_M15;
+input double IndexDeltaThreshold = 0.005; // Soglia minima per attivare trade (Delta Index)
+input bool InvertIndexLogic = false;
+input double RiskPercent  = 1.0;
+input double SL_Pips      = 100.0;
+input double TP_Pips      = 200.0;
+input double LotFallback  = 0.1;
+input int    Slippage     = 5;
+input int    RefreshSeconds = 60;
+
+
+//--- GLOBAL OBJECTS
+CurrencyStrengthSettings csSettings;
+
+CCurrencyStrengthAnalyzer analyzer;  // ✅ PRIMA!
+
+
+CBestCrossSelector selector;
+CCrossStrengthHeatmap heatmap;
+CTradeExecutor executor;
+CRiskManager rm;
+CPositionManager posMgr;
+CVolumeManager volumeMgr;
+CDashboardVisualizer dashboard;
+CTrailingManager trail;
+CPullbackFilter pullback;
+//--- TIMER
+datetime lastExecutionTime = 0;
+
+ENUM_ORDER_TYPE GetOrderTypeByIndexDelta(double indexDelta, bool invert)
+{
+   return ((indexDelta > 0) != invert) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+}
+
+int OnInit()
+{
+   
+   string majorPairs[] = {
+   "AUDCAD","AUDCHF","AUDJPY","AUDNZD","AUDUSD","CADCHF","CADJPY","CHFJPY",
+   "EURAUD","EURCAD","EURCHF","EURGBP","EURJPY","EURNZD","EURUSD","GBPAUD",
+   "GBPCAD","GBPCHF","GBPJPY","GBPUSD","NZDCAD","NZDJPY","NZDUSD",
+   "USDCAD","USDCHF","USDJPY"
+};
+
+for (int i = 0; i < ArraySize(majorPairs); i++)
+{
+   string sym = majorPairs[i];
+
+   if (!SymbolSelect(sym, true))
+      Print("⚠️ Simbolo NON selezionato: ", sym);
+   else
+      Print("✅ Simbolo attivo: ", sym);
+
+   int bars = Bars(sym, PERIOD_H1);
+   if (bars <= 0)
+      Print("❌ Nessun dato per ", sym, " su H1");
+   else
+      Print("📊 Dati caricati per ", sym, ": ", bars, " barre");
+}
+   
+   
+   csSettings.period = 14;
+   csSettings.method = MODE_EMA_EXT;
+   
+   analyzer.Init(csSettings, true);     // ✅ DOPO!
+   
+    selector.Init(csSettings, TopBuyCrosses, TopSellCrosses, IndexDeltaThreshold);
+   dashboard.Init(CORNER_LEFT_UPPER, 10, 10);
+   executor.Init((int)LotFallback, (int)SL_Pips, (int)TP_Pips, Slippage);
+   rm.Init(RiskPercent, (int)SL_Pips);
+   posMgr.Init(TrailingStartPips, TrailingStepPips, GlobalTrailUSD);
+
+   volumeMgr.Configure(
+      LotStrategy, BaseLot, MaxLot, AccountInfoDouble(ACCOUNT_BALANCE),
+      IncrementIndex, MartingaleMultiplier, SumIncrement,
+      UseVolumeReset, ResetTriggerPercent
+   );
+
+                    
+  trail.Init(EnableTrailing, TrailPercent);
+   volumeMgr.SetDebugMode(true);
+   pullback.Init(EMAPeriodTrend, MinPullbackPercent);
+
+   heatmap.Init("CSH", CORNER_LEFT_UPPER, 20, 20);
+   EventSetTimer(RefreshSeconds);
+
+   Print("[EA INIT] CurrencyStrengthTrader pronto.");
+   return INIT_SUCCEEDED;
+}
+
+
+
+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+   heatmap.Clear();
+   Print("[EA STOP] CurrencyStrengthTrader disattivato.");
+}
+
+void OnTimer()
+{
+   Print("[EA] Analisi forza valute e selezione cross...");
+
+   // 🔍 Calcolo forza valute e selezione migliori cross
+   selector.CalculateStrengthMap(TimeframeAnalysis);
+   selector.SelectTopCrosses();
+
+   // 🖼️ Aggiorna pannello visuale (heatmap classica)
+   heatmap.DrawCrossPanel(selector);
+   heatmap.DrawIndexPanel(analyzer, TimeframeAnalysis);
+
+   // 🧾 Prepara l'array dei CrossSignal validi per la dashboard
+   CrossSignal crossArray[10];
+   int validCount = 0;
+
+   for (int i = 0; i < 10; i++) {
+      CrossSignal cs = selector.GetBestCross(i);
+      if (!cs.isValid)
+         continue;
+
+      // 📉 Applica filtro pullback EMA (solo spike contro trend)
+      ENUM_ORDER_TYPE type = GetOrderTypeByIndexDelta(cs.indexDelta, InvertIndexLogic);
+      if (!pullback.IsPullbackConfirmed(cs.symbol, TimeframeAnalysis, type)) {
+         Print("⛔ Skip ", cs.symbol, ": no pullback su trend EMA");
+         continue;
+      }
+
+      crossArray[validCount++] = cs;
+
+      // 🛑 Salta se c'è già una posizione aperta nello stesso senso
+      if (executor.HasOpenPositionSameDirection(cs.symbol, type))
+         continue;
+
+      // 💰 Calcolo lotto
+      double lots = volumeMgr.GetLotSize();
+      if (lots <= 0.0) {
+         Print("[EA] Skipping ", cs.symbol, " per lotto invalido (", DoubleToString(lots, 2), ")");
+         continue;
+      }
+
+      // ⚙️ Setup moduli operativi
+      if (EnableTrailing)
+         posMgr.Update();
+
+      executor.Init(lots, SL_Pips, TP_Pips, Slippage);
+      executor.ExecuteOrders(selector, InvertIndexLogic, IndexDeltaThreshold, MaxSpreadPoints);
+
+      // 🌀 Applica trailing stop (se abilitato)
+      if (EnableTrailing)
+         trail.ApplyAll();
+   }
+
+   // 📊 Visualizza la tabella dashboard solo se attivo
+   if (ShowDashboard && validCount > 0)
+      dashboard.DrawCrossTable(crossArray, validCount);
+}
+
+
+
+void OnTick()
+{
+   // Vuoto - solo analisi ciclica via OnTimer
+}
